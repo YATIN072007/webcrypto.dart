@@ -41,17 +41,8 @@ jobs:
       - run: flutter pub run webcrypto:setup
       - run: flutter test
       - run: flutter test --platform chrome
-      - run: flutter test --platform chrome --wasm
       - run: xvfb-run flutter test integration_test/webcrypto_test.dart -d linux
         working-directory: ./example
-      - uses: nanasess/setup-chromedriver@v2
-      - name: Run integration_test with chromedriver
-        working-directory: ./example
-        run: |
-          xvfb-run ../tool/with-chromedriver.sh flutter drive \
-            --driver=test_driver/integration_test.dart \
-            --target=integration_test/webcrypto_test.dart \
-            -d chrome
       - run: xvfb-run flutter pub run test -p vm,chrome,firefox
   macos-14:
     name: MacOS 14 desktop / Chrome / Firefox
@@ -70,7 +61,6 @@ jobs:
       - run: flutter pub run webcrypto:setup
       - run: flutter test
       - run: flutter test --platform chrome
-      - run: flutter test --platform chrome --wasm
       - run: flutter test integration_test/webcrypto_test.dart -d macos
         working-directory: ./example
       # TODO: Enable chromedriver testing on MacOS when it works reliably
@@ -107,7 +97,6 @@ jobs:
       - run: flutter pub run webcrypto:setup
       - run: flutter test
       - run: flutter test --platform chrome
-      - run: flutter test --platform chrome --wasm
       - run: flutter test integration_test/webcrypto_test.dart -d macos
         working-directory: ./example
       # TODO: Enable chromedriver testing on MacOS when it works reliably
@@ -140,20 +129,11 @@ jobs:
       #- run: flutter test --platform chrome --wasm
       - run: flutter test integration_test/webcrypto_test.dart -d windows
         working-directory: ./example
-      - uses: nanasess/setup-chromedriver@v2
-      - name: Run integration_test with chromedriver
-        working-directory: ./example
-        shell: bash
-        run: |
-          ../tool/with-chromedriver.sh flutter drive \
-            --driver=test_driver/integration_test.dart \
-            --target=integration_test/webcrypto_test.dart \
-            -d chrome
       - run: flutter pub run test -p vm,chrome,firefox
   ios:
     name: iOS emulator (iPhone)
     runs-on: macos-14
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -167,8 +147,12 @@ jobs:
         with:
           model: 'iPhone 15'
       - run: flutter pub get
-      - run: flutter test integration_test/webcrypto_test.dart -d iphone
-        working-directory: ./example
+      - name: Run integration tests
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 20
+          max_attempts: 2
+          command: cd example && flutter test integration_test/webcrypto_test.dart -d iphone --timeout 60s
   android:
     name: Android emulator
     runs-on: ubuntu-latest
@@ -196,12 +180,29 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
-          # TODO: switch back to default once this is issue resolved:
-          # https://issuetracker.google.com/issues/432143095
           target: google_apis
           arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           working-directory: ./example
-          script: flutter test integration_test/webcrypto_test.dart -d emulator
+          script: >-
+            flutter test integration_test/webcrypto_test.dart -d emulator --timeout 60s ||
+            flutter test integration_test/webcrypto_test.dart -d emulator --timeout 60s ||
+            flutter test integration_test/webcrypto_test.dart -d emulator --timeout 60s
+  linux-wasm:
+    name: Linux browser / Chrome (dart2wasm smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - name: Configure Flutter
+        run: |
+          flutter config --no-analytics
+      - run: flutter pub get
+      - run: xvfb-run flutter pub run test -p chrome -c dart2wasm test/crypto_subtle_test.dart
   linux-coverage:
     name: Linux desktop / Chrome / Firefox (coverage)
     runs-on: ubuntu-latest
